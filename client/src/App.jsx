@@ -17,6 +17,7 @@ export default function App() {
   const [activeRepo, setActiveRepo] = useState(null);
   const [repoFiles, setRepoFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [showFileTree, setShowFileTree] = useState(true);
 
   // Indexing State
   const [indexing, setIndexing] = useState(false);
@@ -46,7 +47,6 @@ export default function App() {
           }
         })
         .catch(() => {
-          // If token invalid, auto-login demo user
           autoLoginDemo();
         });
     } else {
@@ -106,7 +106,6 @@ export default function App() {
             }
           }
         } catch {
-          // In case polling has network delay, refresh repos
           loadUserRepos();
         }
       }, 2500);
@@ -172,7 +171,6 @@ export default function App() {
           return exists ? prev.map((r) => (r._id === res.repo._id ? res.repo : r)) : [res.repo, ...prev];
         });
 
-        // If returned ready from serverless
         if (res.repo.status === 'ready') {
           setIndexing(false);
           loadRepoFiles(res.repo._id);
@@ -255,7 +253,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-dark-900 text-slate-100 font-sans">
+    <div className="h-screen w-screen flex flex-col bg-dark-900 text-slate-100 font-sans overflow-hidden">
       {/* Top Navigation */}
       <Navbar
         user={user}
@@ -266,7 +264,7 @@ export default function App() {
       />
 
       {/* Main Workspace Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left Sidebar: Repository List */}
         <Sidebar
           repos={repos}
@@ -277,7 +275,7 @@ export default function App() {
         />
 
         {/* Center/Right Content Area */}
-        <main className="flex-1 flex overflow-hidden bg-dark-900">
+        <main className="flex-1 flex overflow-hidden bg-dark-900 min-w-0 min-h-0">
           {!activeRepo ? (
             <div className="flex-1 overflow-y-auto">
               <RepoInput onIndexRepo={handleIndexRepo} indexing={indexing} />
@@ -305,13 +303,15 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex h-full overflow-hidden">
-              {/* VS Code File Explorer */}
-              <FileTree
-                files={repoFiles}
-                onSelectFile={(path) => setSelectedFile(path)}
-                selectedFile={selectedFile}
-              />
+            <div className="flex-1 flex h-full overflow-hidden min-w-0 min-h-0">
+              {/* VS Code File Explorer (Collapsible) */}
+              {showFileTree && (
+                <FileTree
+                  files={repoFiles}
+                  onSelectFile={(path) => setSelectedFile(path)}
+                  selectedFile={selectedFile}
+                />
+              )}
 
               {/* RAG Streaming Chat Window */}
               <ChatWindow
@@ -322,6 +322,8 @@ export default function App() {
                 currentSources={currentSources}
                 isStreaming={isStreaming}
                 onOpenSourceSnippet={(src) => setActiveSnippet(src)}
+                showFileTree={showFileTree}
+                onToggleFileTree={() => setShowFileTree(!showFileTree)}
               />
             </div>
           )}
