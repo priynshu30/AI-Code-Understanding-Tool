@@ -32,7 +32,6 @@ export default function App() {
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [activeSnippet, setActiveSnippet] = useState(null);
 
-  // Polling ref for status checking
   const pollIntervalRef = useRef(null);
 
   // 1. Initial Auth & Repos load
@@ -47,16 +46,40 @@ export default function App() {
           }
         })
         .catch(() => {
-          localStorage.removeItem('repomind_token');
+          // If token invalid, auto-login demo user
+          autoLoginDemo();
         });
+    } else {
+      autoLoginDemo();
     }
   }, []);
+
+  const autoLoginDemo = async () => {
+    try {
+      let res;
+      try {
+        res = await api.login('demo@repomind.io', 'demopass123');
+      } catch {
+        res = await api.register('Demo Developer', 'demo@repomind.io', 'demopass123');
+      }
+      if (res.token) {
+        localStorage.setItem('repomind_token', res.token);
+        setUser(res.user);
+        loadUserRepos();
+      }
+    } catch (e) {
+      console.warn('Auto demo login skipped:', e.message);
+    }
+  };
 
   const loadUserRepos = async () => {
     try {
       const res = await api.getUserRepos();
-      if (res.repos) {
+      if (res.repos && res.repos.length > 0) {
         setRepos(res.repos);
+        if (!activeRepo) {
+          handleSelectRepo(res.repos[0]);
+        }
       }
     } catch (err) {
       console.warn('Could not load repos:', err.message);
@@ -82,8 +105,9 @@ export default function App() {
               }
             }
           }
-        } catch (pollErr) {
-          console.warn('Polling error:', pollErr.message);
+        } catch {
+          // In case polling has network delay, refresh repos
+          loadUserRepos();
         }
       }, 2500);
     }
@@ -148,6 +172,7 @@ export default function App() {
           return exists ? prev.map((r) => (r._id === res.repo._id ? res.repo : r)) : [res.repo, ...prev];
         });
 
+        // If returned ready from serverless
         if (res.repo.status === 'ready') {
           setIndexing(false);
           loadRepoFiles(res.repo._id);
@@ -177,7 +202,6 @@ export default function App() {
   const handleSendMessage = async (question) => {
     if (!activeRepo || !question.trim()) return;
 
-    // Add user message to state
     setMessages((prev) => [...prev, { sender: 'user', text: question }]);
     setIsStreaming(true);
     setStreamingMessage('');

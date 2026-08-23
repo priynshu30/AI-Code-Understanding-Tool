@@ -2,11 +2,16 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const CACHE_FILE = path.join(__dirname, '../../.storage_cache.json');
+
+// On Vercel serverless, only /tmp is writable; on local dev, use project root
+const CACHE_FILE = process.env.VERCEL
+  ? path.join(os.tmpdir(), '.storage_cache.json')
+  : path.join(__dirname, '../../.storage_cache.json');
 
 // In-Memory Data Structures with disk persistence
 let memoryStore = {
@@ -30,7 +35,7 @@ const loadDiskCache = () => {
     if (fs.existsSync(CACHE_FILE)) {
       const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      if (parsed.users) memoryStore.users = parsed.users;
+      if (parsed.users && parsed.users.length > 0) memoryStore.users = parsed.users;
       if (parsed.repos) memoryStore.repos = parsed.repos;
       if (parsed.codeChunks) memoryStore.codeChunks = parsed.codeChunks;
       if (parsed.chatHistory) memoryStore.chatHistory = parsed.chatHistory;
@@ -87,7 +92,6 @@ export const storeFindUserById = async (id) => {
 
   let user = memoryStore.users.find((u) => u._id.toString() === id?.toString());
   if (!user) {
-    // Default fallback to first user in demo mode
     user = memoryStore.users[0];
   }
 
@@ -129,7 +133,8 @@ export const storeFindRepo = async (query) => {
     return await mongoose.model('Repo').findOne(query);
   }
 
-  // Resilient lookup: match by _id or fallback to latest indexed repo
+  loadDiskCache(); // Refresh from cache in case another lambda instance wrote it
+
   let found = memoryStore.repos.find((r) => {
     if (query._id && r._id.toString() === query._id.toString()) return true;
     if (query.repoName && query.owner && r.repoName === query.repoName && r.owner === query.owner) return true;
@@ -148,6 +153,7 @@ export const storeFindUserRepos = async (userId) => {
     return await mongoose.model('Repo').find({ userId }).sort({ createdAt: -1 });
   }
 
+  loadDiskCache();
   return memoryStore.repos;
 };
 
@@ -156,6 +162,7 @@ export const storeCreateRepo = async (repoData) => {
     return await mongoose.model('Repo').create(repoData);
   }
 
+  loadDiskCache();
   const newRepo = {
     _id: new mongoose.Types.ObjectId().toString(),
     status: 'pending',
@@ -168,7 +175,6 @@ export const storeCreateRepo = async (repoData) => {
     ...repoData
   };
 
-  // Remove duplicate if exists
   memoryStore.repos = memoryStore.repos.filter((r) => r.repoUrl !== repoData.repoUrl);
   memoryStore.repos.unshift(newRepo);
   saveDiskCache();
@@ -180,7 +186,12 @@ export const storeUpdateRepo = async (id, updateData) => {
     return await mongoose.model('Repo').findByIdAndUpdate(id, updateData, { new: true });
   }
 
-  const index = memoryStore.repos.findIndex((r) => r._id.toString() === id.toString());
+  loadDiskCache();
+  let index = memoryStore.repos.findIndex((r) => r._id.toString() === id.toString());
+  if (index === -1 && memoryStore.repos.length > 0) {
+    index = 0;
+  }
+
   if (index !== -1) {
     memoryStore.repos[index] = {
       ...memoryStore.repos[index],
@@ -202,6 +213,7 @@ export const storeDeleteRepo = async (id, userId) => {
     return repo;
   }
 
+  loadDiskCache();
   const index = memoryStore.repos.findIndex((r) => r._id.toString() === id.toString());
   if (index !== -1) {
     const [deleted] = memoryStore.repos.splice(index, 1);
@@ -225,6 +237,7 @@ export const storeSaveChunks = async (repoId, chunks) => {
     return;
   }
 
+  loadDiskCache();
   memoryStore.codeChunks = memoryStore.codeChunks.filter((c) => c.repoId.toString() !== repoId.toString());
   const indexedChunks = chunks.map((c) => ({
     ...c,
@@ -240,6 +253,7 @@ export const storeFindChunks = async (repoId) => {
     return await mongoose.model('CodeChunk').find({ repoId }).lean();
   }
 
+  loadDiskCache();
   return memoryStore.codeChunks.filter((c) => c.repoId.toString() === repoId.toString());
 };
 
@@ -251,6 +265,7 @@ export const storeCreateChatHistory = async ({ userId, repoId, question, answer,
     return await mongoose.model('ChatHistory').create({ userId, repoId, question, answer, sources });
   }
 
+  loadDiskCache();
   const record = {
     _id: new mongoose.Types.ObjectId().toString(),
     userId,
@@ -270,6 +285,7 @@ export const storeFindChatHistory = async (repoId, userId) => {
     return await mongoose.model('ChatHistory').find({ repoId, userId }).sort({ createdAt: 1 });
   }
 
+  loadDiskCache();
   return memoryStore.chatHistory
     .filter((h) => h.repoId.toString() === repoId.toString())
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));

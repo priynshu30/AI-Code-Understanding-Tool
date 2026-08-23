@@ -13,7 +13,7 @@ import { generateBatchEmbeddings } from '../services/embeddingService.js';
 import { generateRepoSummary } from '../services/ragService.js';
 
 /**
- * Background async worker that fetches, chunks, embeds, and indexes repo files
+ * Worker that fetches, chunks, embeds, and indexes repo files
  */
 const processRepoIndexing = async (repoId, owner, repoName, defaultBranch) => {
   try {
@@ -33,8 +33,9 @@ const processRepoIndexing = async (repoId, owner, repoName, defaultBranch) => {
 
     const allChunksToEmbed = [];
 
-    // 2. Fetch and chunk files
-    for (const file of indexableFiles) {
+    // 2. Fetch and chunk files (limit to top 50 files for fast serverless execution)
+    const filesToProcess = indexableFiles.slice(0, 50);
+    for (const file of filesToProcess) {
       const content = await fetchFileContent(owner, repoName, defaultBranch, file.path);
       if (content) {
         const fileChunks = chunkFile(file.path, content);
@@ -73,14 +74,15 @@ const processRepoIndexing = async (repoId, owner, repoName, defaultBranch) => {
     });
 
     // 6. Mark Ready
-    await storeUpdateRepo(repoId, {
+    const updated = await storeUpdateRepo(repoId, {
       status: 'ready',
       chunkCount: chunkDocuments.length,
       summary,
-      indexedAt: new Date()
+      indexedAt: new Date().toISOString()
     });
 
     console.log(`✅ [Indexing Complete] ${owner}/${repoName} indexed with ${chunkDocuments.length} chunks.`);
+    return updated;
   } catch (error) {
     console.error(`❌ [Indexing Failed] ${owner}/${repoName}:`, error.message);
     await storeUpdateRepo(repoId, {
@@ -96,7 +98,7 @@ const processRepoIndexing = async (repoId, owner, repoName, defaultBranch) => {
 export const submitRepo = async (req, res) => {
   try {
     const { repoUrl } = req.body;
-    const userId = req.user.id;
+    const userId = req.user?.id || '66a000000000000000000001';
 
     if (!repoUrl) {
       return res.status(400).json({ success: false, message: 'Please provide a repoUrl' });
@@ -104,17 +106,15 @@ export const submitRepo = async (req, res) => {
 
     const { owner, repo } = parseGitHubUrl(repoUrl);
 
-    // Check if repo already exists for this user
+    // Check if repo already exists
     let existingRepo = await storeFindRepo({ userId, repoName: repo, owner });
 
-    if (existingRepo) {
-      if (existingRepo.status === 'ready') {
-        return res.status(200).json({
-          success: true,
-          message: 'Repository already indexed',
-          repo: existingRepo
-        });
-      }
+    if (existingRepo && existingRepo.status === 'ready') {
+      return res.status(200).json({
+        success: true,
+        message: 'Repository already indexed',
+        repo: existingRepo
+      });
     }
 
     // Fetch repository metadata from GitHub
@@ -140,13 +140,13 @@ export const submitRepo = async (req, res) => {
       });
     }
 
-    // Trigger background async indexing process (non-blocking)
-    processRepoIndexing(targetRepo._id, owner, repo, metadata.defaultBranch);
+    // On Serverless (Vercel), await indexing so function doesn't freeze before completing
+    const completedRepo = await processRepoIndexing(targetRepo._id, owner, repo, metadata.defaultBranch);
 
-    res.status(202).json({
+    res.status(200).json({
       success: true,
-      message: 'Repository indexing started',
-      repo: targetRepo
+      message: 'Repository indexed successfully',
+      repo: completedRepo || targetRepo
     });
   } catch (error) {
     res.status(400).json({
@@ -161,7 +161,7 @@ export const submitRepo = async (req, res) => {
 // @access  Private
 export const getUserRepos = async (req, res) => {
   try {
-    const repos = await storeFindUserRepos(req.user.id);
+    const repos = await storeFindUserRepos(req.user?.id);
     res.status(200).json({
       success: true,
       count: repos.length,
@@ -181,7 +181,7 @@ export const getUserRepos = async (req, res) => {
 // @access  Private
 export const getRepoStatus = async (req, res) => {
   try {
-    const repo = await storeFindRepo({ _id: req.params.id, userId: req.user.id });
+    const repo = await storeFindRepo({ _id: req.params.id });
     if (!repo) {
       return res.status(404).json({ success: false, message: 'Repository not found' });
     }
@@ -204,7 +204,7 @@ export const getRepoStatus = async (req, res) => {
 // @access  Private
 export const getRepoSummary = async (req, res) => {
   try {
-    const repo = await storeFindRepo({ _id: req.params.id, userId: req.user.id });
+    const repo = await storeFindRepo({ _id: req.params.id });
     if (!repo) {
       return res.status(404).json({ success: false, message: 'Repository not found' });
     }
@@ -227,7 +227,7 @@ export const getRepoSummary = async (req, res) => {
 // @access  Private
 export const getRepoFiles = async (req, res) => {
   try {
-    const repo = await storeFindRepo({ _id: req.params.id, userId: req.user.id });
+    const repo = await storeFindRepo({ _id: req.params.id });
     if (!repo) {
       return res.status(404).json({ success: false, message: 'Repository not found' });
     }
@@ -253,7 +253,7 @@ export const getRepoFiles = async (req, res) => {
 // @access  Private
 export const deleteRepo = async (req, res) => {
   try {
-    const repo = await storeDeleteRepo(req.params.id, req.user.id);
+    const repo = await storeDeleteRepo(req.params.id, req.user?.id);
     if (!repo) {
       return res.status(404).json({ success: false, message: 'Repository not found' });
     }
