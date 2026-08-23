@@ -11,7 +11,7 @@
 ## 📸 Application Screenshot & Interface Preview
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/priynshu30/AI-Code-Understanding-Tool/main/client/public/demo_preview.png" alt="RepoMind Interface Preview" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+  <img src="./client/public/demo_preview.png" alt="RepoMind Interface Preview" width="95%" />
   <p align="center"><i>Interactive RAG Chat with real-time token streaming, VS Code style file explorer, and clickable source line citations.</i></p>
 </div>
 
