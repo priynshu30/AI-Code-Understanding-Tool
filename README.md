@@ -103,21 +103,5 @@ npm run dev
 
 ---
 
-## 🎤 Interview Cheatsheet & Technical Defense
-
-> **Q1: Why did you choose RAG over fine-tuning or feeding whole files into the LLM?**
->
-> *"Fine-tuning is expensive and static (it cannot update as code changes daily). Sending entire repositories exceeds context window limits and costs dollars per query. RAG retrieves only the top-5 semantically relevant code chunks (reducing prompt size by 95%+) and grounds LLM responses on actual source code to prevent hallucinations."*
-
-> **Q2: Why did you use Server-Sent Events (SSE) instead of WebSockets?**
->
-> *"LLM streaming is strictly unidirectional (server pushing tokens to client). SSE runs natively over HTTP, avoids custom socket handshakes, works seamlessly through firewalls and corporate proxies, and is much simpler to authenticate and load balance."*
-
-> **Q3: How does your code chunking strategy differ from character splitting?**
->
-> *"Fixed-character chunking destroys syntax by slicing functions or loops in the middle. Our chunker is AST/regex-aware: it identifies function, class, and method definitions across multiple languages and tags each chunk with exact `startLine` and `endLine` metadata to enable precise citations."*
-
----
-
 ## 📜 License
 This project is licensed under the [MIT License](LICENSE).
